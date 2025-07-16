@@ -38,8 +38,8 @@
 
 //#define USE_COEFFICIENTS
 
-//#define INDICATE_PROGRESS
-#define PRINT_PERSISTENCE_PAIRS
+#define INDICATE_PROGRESS
+//#define PRINT_PERSISTENCE_PAIRS
 
 //#define USE_ROBINHOOD_HASHMAP
 
@@ -98,7 +98,7 @@ void check_overflow(index_t i) {
 
 class binomial_coeff_table {
 	std::vector<std::vector<index_t>> B;
-	
+
 
 public:
 	binomial_coeff_table(index_t n, index_t k) : B(k + 1, std::vector<index_t>(n + 1, 0)) {
@@ -565,6 +565,7 @@ public:
 
 		simplex_coboundary_enumerator cofacets(*this);
 
+		unsigned int n_apparent_pairs = 0;
 		for (diameter_index_t& simplex : simplices) {
 			cofacets.set_simplex(diameter_entry_t(simplex, 1), dim - 1);
 
@@ -580,24 +581,26 @@ public:
 				auto cofacet = cofacets.next();
 				if (get_diameter(cofacet) <= threshold) {
 					if (dim < dim_max) next_simplices.push_back({get_diameter(cofacet), get_index(cofacet)});
-					if (!is_in_zero_apparent_pair(cofacet, dim) &&
-					    (pivot_column_index.find(get_entry(cofacet)) == pivot_column_index.end()))
-						columns_to_reduce.push_back({get_diameter(cofacet), get_index(cofacet)});
+					if (pivot_column_index.find(get_entry(cofacet)) == pivot_column_index.end())
+						if(is_in_zero_apparent_pair(cofacet, dim))
+							++n_apparent_pairs;
+						else
+							columns_to_reduce.push_back({get_diameter(cofacet), get_index(cofacet)});
 				}
 			}
 		}
+		std::cerr << "Number of apparent (co)faces in dim " << dim << ": " << n_apparent_pairs  << "/" << (n_apparent_pairs + columns_to_reduce.size()) << " (" << 100 * n_apparent_pairs / (n_apparent_pairs + simplices.size()) << "%)" <<  std::endl;
 
 		if (dim < dim_max) simplices.swap(next_simplices);
-
-#ifdef INDICATE_PROGRESS
+		#ifdef INDICATE_PROGRESS
 		std::cerr << clear_line << "sorting " << columns_to_reduce.size() << " columns"
 		          << std::flush;
 #endif
 
-		std::sort(columns_to_reduce.begin(), columns_to_reduce.end(),
-		          greater_diameter_or_smaller_index<diameter_index_t>);
+std::sort(columns_to_reduce.begin(), columns_to_reduce.end(),
+greater_diameter_or_smaller_index<diameter_index_t>);
 #ifdef INDICATE_PROGRESS
-		std::cerr << clear_line << std::flush;
+std::cerr << clear_line << std::flush;
 #endif
 	}
 
@@ -606,6 +609,7 @@ public:
 #ifdef PRINT_PERSISTENCE_PAIRS
 		std::cout << "persistence intervals in dim 0:" << std::endl;
 #endif
+		uint n_apparent_pairs = 0;
 
 		union_find dset(n);
 
@@ -623,9 +627,14 @@ public:
 					std::cout << " [0," << get_diameter(e) << ")" << std::endl;
 #endif
 				dset.link(u, v);
-			} else if ((dim_max > 0) && (get_index(get_zero_apparent_cofacet(e, 1)) == -1))
-				columns_to_reduce.push_back(e);
+			} else if (dim_max > 0){
+				if(get_index(get_zero_apparent_cofacet(e, 1)) == -1)
+					columns_to_reduce.push_back(e);
+				else
+				 	++n_apparent_pairs;
+			}
 		}
+		std::cerr << "Number of apparent cofaces in dim 1: " << n_apparent_pairs << "/" << edges.size() << " (" << 100 * n_apparent_pairs / edges.size() << "%)" <<  std::endl;
 		if (dim_max > 0) std::reverse(columns_to_reduce.begin(), columns_to_reduce.end());
 
 #ifdef PRINT_PERSISTENCE_PAIRS
@@ -724,7 +733,7 @@ public:
 #endif
 
 		compressed_sparse_matrix<diameter_entry_t> reduction_matrix;
-		
+
 #ifdef INDICATE_PROGRESS
 		std::chrono::steady_clock::time_point next = std::chrono::steady_clock::now() + time_step;
 #endif
@@ -732,8 +741,9 @@ public:
 		     ++index_column_to_reduce) {
 
 			diameter_entry_t column_to_reduce(columns_to_reduce[index_column_to_reduce], 1);
+#ifdef PRINT_PERSISTENCE_PAIRS
 			value_t diameter = get_diameter(column_to_reduce);
-
+#endif
 			reduction_matrix.append_column();
 
 			std::priority_queue<diameter_entry_t, std::vector<diameter_entry_t>,
@@ -747,7 +757,7 @@ public:
 #ifdef INDICATE_PROGRESS
 				if (std::chrono::steady_clock::now() > next) {
 					std::cerr << clear_line << "reducing column " << index_column_to_reduce + 1
-					          << "/" << columns_to_reduce.size() << " (diameter " << diameter << ")"
+					          << "/" << columns_to_reduce.size() << " (diameter " << get_diameter(e) << ")"
 					          << std::flush;
 					next = std::chrono::steady_clock::now() + time_step;
 				}
