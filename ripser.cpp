@@ -404,7 +404,7 @@ template <typename DistanceMatrix> class ripser {
 	const std::vector<coefficient_t> multiplicative_inverse;
 	mutable std::vector<diameter_entry_t> cofacet_entries;
 	mutable std::vector<index_t> vertices;
-	uint n_steps_check_zero_apparent_pairs = 0;
+	uint n_simplices, n_apparent, n_steps = 0;
 
 	struct entry_hash {
 		std::size_t operator()(const entry_t& e) const { return hash<index_t>()(::get_index(e)); }
@@ -515,7 +515,7 @@ public:
 		static simplex_boundary_enumerator facets(0, *this);
 		facets.set_simplex(simplex, dim);
 		while (facets.has_next()) {
-			++n_steps_check_zero_apparent_pairs;
+			++n_steps;
 			diameter_entry_t facet = facets.next();
 			if (get_diameter(facet) == get_diameter(simplex)) return facet;
 		}
@@ -526,7 +526,7 @@ public:
 		static simplex_coboundary_enumerator cofacets(*this);
 		cofacets.set_simplex(simplex, dim);
 		while (cofacets.has_next()) {
-			++n_steps_check_zero_apparent_pairs;
+			++n_steps;
 			diameter_entry_t cofacet = cofacets.next();
 			if (get_diameter(cofacet) == get_diameter(simplex)) return cofacet;
 		}
@@ -568,7 +568,7 @@ public:
 
 		simplex_coboundary_enumerator cofacets(*this);
 
-		unsigned int n_apparent_pairs = 0;
+		unsigned int n_apparent = 0;
 		for (diameter_index_t& simplex : simplices) {
 			cofacets.set_simplex(diameter_entry_t(simplex, 1), dim - 1);
 
@@ -584,15 +584,15 @@ public:
 				auto cofacet = cofacets.next();
 				if (get_diameter(cofacet) <= threshold) {
 					if (dim < dim_max) next_simplices.push_back({get_diameter(cofacet), get_index(cofacet)});
-					if (pivot_column_index.find(get_entry(cofacet)) == pivot_column_index.end())
+					if (pivot_column_index.find(get_entry(cofacet)) == pivot_column_index.end()){
 						if(is_in_zero_apparent_pair(cofacet, dim))
-							++n_apparent_pairs;
+							++n_apparent;
 						else
 							columns_to_reduce.push_back({get_diameter(cofacet), get_index(cofacet)});
+					}
 				}
 			}
 		}
-		std::cerr << "Number of apparent (co)faces in dim " << dim << ": " << n_apparent_pairs  << "/" << (n_apparent_pairs + columns_to_reduce.size()) << " (" << 100 * n_apparent_pairs / (n_apparent_pairs + simplices.size()) << "%)" <<  std::endl;
 
 		if (dim < dim_max) simplices.swap(next_simplices);
 		#ifdef INDICATE_PROGRESS
@@ -612,7 +612,6 @@ std::cerr << clear_line << std::flush;
 #ifdef PRINT_PERSISTENCE_PAIRS
 		std::cout << "persistence intervals in dim 0:" << std::endl;
 #endif
-		uint n_apparent_pairs = 0;
 
 		union_find dset(n);
 
@@ -620,6 +619,7 @@ std::cerr << clear_line << std::flush;
 		std::sort(edges.rbegin(), edges.rend(),
 		          greater_diameter_or_smaller_index<diameter_index_t>);
 		std::vector<index_t> vertices_of_edge(2);
+		n_apparent = 0;
 		for (auto e : edges) {
 			get_simplex_vertices(get_index(e), 1, n, vertices_of_edge.rbegin());
 			index_t u = dset.find(vertices_of_edge[0]), v = dset.find(vertices_of_edge[1]);
@@ -630,15 +630,14 @@ std::cerr << clear_line << std::flush;
 					std::cout << " [0," << get_diameter(e) << ")" << std::endl;
 				#endif
 				dset.link(u, v);
-				++n_apparent_pairs;
+				++n_apparent; // but not zero apparent
 			} else if (dim_max > 0){
 				if(get_index(get_zero_apparent_cofacet(e, 1)) == -1)
 					columns_to_reduce.push_back(e);
 				else
-				 	++n_apparent_pairs;
+				 	++n_apparent;
 			}
 		}
-		std::cerr << "Number of apparent (co)faces in dim 1: " << n_apparent_pairs << "/" << edges.size() << " (" << 100 * n_apparent_pairs / edges.size() << "%)" <<  std::endl;
 		if (dim_max > 0) std::reverse(columns_to_reduce.begin(), columns_to_reduce.end());
 
 #ifdef PRINT_PERSISTENCE_PAIRS
@@ -827,25 +826,28 @@ std::cerr << clear_line << std::flush;
 	void compute_barcodes() {
 		std::vector<diameter_index_t> simplices, columns_to_reduce;
 
-		n_steps_check_zero_apparent_pairs = 0;
+		n_apparent = 0;
+		n_steps = 0;
 		compute_dim_0_pairs(simplices, columns_to_reduce);
-		std::cerr << "Number of steps to find apparent pairs in dim 0: "
-		          << n_steps_check_zero_apparent_pairs << std::endl;
 
 		for (index_t dim = 1; dim <= dim_max; ++dim) {
 			entry_hash_map pivot_column_index;
 			pivot_column_index.reserve(columns_to_reduce.size());
 
-			std::cerr << "Numer of columns to reduce in dim " << dim << ": "
-			          << columns_to_reduce.size() << std::endl;
-			compute_pairs(columns_to_reduce, pivot_column_index, dim);
+			std::cerr << "Interesting numbers (n_cols_to_reduce, n_apparent, n_steps):\n"
+					  << columns_to_reduce.size() << ","
+					  << n_apparent  << ","
+					  << n_steps
+					  << std::endl;
 
-			n_steps_check_zero_apparent_pairs = 0;
+			if(dim < dim_max)
+				compute_pairs(columns_to_reduce, pivot_column_index, dim);
+
+			n_steps = 0;
+			n_apparent = 0;
 			if (dim < dim_max)
 				assemble_columns_to_reduce(simplices, columns_to_reduce, pivot_column_index,
 				                           dim + 1);
-			std::cerr <<"Number of steps to find apparent pairs in dim " << dim << ": "
-			          << n_steps_check_zero_apparent_pairs << std::endl;
 		}
 	}
 };
