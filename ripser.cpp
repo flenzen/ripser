@@ -829,6 +829,8 @@ std::cerr << clear_line << std::flush;
 			entry_hash_map pivot_column_index;
 			pivot_column_index.reserve(columns_to_reduce.size());
 
+			std::cerr << "Numer of columns to reduce in dim " << dim << ": "
+			          << columns_to_reduce.size() << std::endl;
 			compute_pairs(columns_to_reduce, pivot_column_index, dim);
 
 			if (dim < dim_max)
