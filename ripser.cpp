@@ -38,7 +38,7 @@
 
 //#define USE_COEFFICIENTS
 
-#define INDICATE_PROGRESS
+// #define INDICATE_PROGRESS
 //#define PRINT_PERSISTENCE_PAIRS
 
 //#define USE_ROBINHOOD_HASHMAP
@@ -404,6 +404,7 @@ template <typename DistanceMatrix> class ripser {
 	const std::vector<coefficient_t> multiplicative_inverse;
 	mutable std::vector<diameter_entry_t> cofacet_entries;
 	mutable std::vector<index_t> vertices;
+	uint n_steps_check_zero_apparent_pairs = 0;
 
 	struct entry_hash {
 		std::size_t operator()(const entry_t& e) const { return hash<index_t>()(::get_index(e)); }
@@ -514,6 +515,7 @@ public:
 		static simplex_boundary_enumerator facets(0, *this);
 		facets.set_simplex(simplex, dim);
 		while (facets.has_next()) {
+			++n_steps_check_zero_apparent_pairs;
 			diameter_entry_t facet = facets.next();
 			if (get_diameter(facet) == get_diameter(simplex)) return facet;
 		}
@@ -524,6 +526,7 @@ public:
 		static simplex_coboundary_enumerator cofacets(*this);
 		cofacets.set_simplex(simplex, dim);
 		while (cofacets.has_next()) {
+			++n_steps_check_zero_apparent_pairs;
 			diameter_entry_t cofacet = cofacets.next();
 			if (get_diameter(cofacet) == get_diameter(simplex)) return cofacet;
 		}
@@ -622,11 +625,12 @@ std::cerr << clear_line << std::flush;
 			index_t u = dset.find(vertices_of_edge[0]), v = dset.find(vertices_of_edge[1]);
 
 			if (u != v) {
-#ifdef PRINT_PERSISTENCE_PAIRS
-				if (get_diameter(e) != 0)
+				#ifdef PRINT_PERSISTENCE_PAIRS
+					if (get_diameter(e) != 0)
 					std::cout << " [0," << get_diameter(e) << ")" << std::endl;
-#endif
+				#endif
 				dset.link(u, v);
+				++n_apparent_pairs;
 			} else if (dim_max > 0){
 				if(get_index(get_zero_apparent_cofacet(e, 1)) == -1)
 					columns_to_reduce.push_back(e);
@@ -634,7 +638,7 @@ std::cerr << clear_line << std::flush;
 				 	++n_apparent_pairs;
 			}
 		}
-		std::cerr << "Number of apparent cofaces in dim 1: " << n_apparent_pairs << "/" << edges.size() << " (" << 100 * n_apparent_pairs / edges.size() << "%)" <<  std::endl;
+		std::cerr << "Number of apparent (co)faces in dim 1: " << n_apparent_pairs << "/" << edges.size() << " (" << 100 * n_apparent_pairs / edges.size() << "%)" <<  std::endl;
 		if (dim_max > 0) std::reverse(columns_to_reduce.begin(), columns_to_reduce.end());
 
 #ifdef PRINT_PERSISTENCE_PAIRS
@@ -823,7 +827,10 @@ std::cerr << clear_line << std::flush;
 	void compute_barcodes() {
 		std::vector<diameter_index_t> simplices, columns_to_reduce;
 
+		n_steps_check_zero_apparent_pairs = 0;
 		compute_dim_0_pairs(simplices, columns_to_reduce);
+		std::cerr << "Number of steps to find apparent pairs in dim 0: "
+		          << n_steps_check_zero_apparent_pairs << std::endl;
 
 		for (index_t dim = 1; dim <= dim_max; ++dim) {
 			entry_hash_map pivot_column_index;
@@ -833,9 +840,12 @@ std::cerr << clear_line << std::flush;
 			          << columns_to_reduce.size() << std::endl;
 			compute_pairs(columns_to_reduce, pivot_column_index, dim);
 
+			n_steps_check_zero_apparent_pairs = 0;
 			if (dim < dim_max)
 				assemble_columns_to_reduce(simplices, columns_to_reduce, pivot_column_index,
 				                           dim + 1);
+			std::cerr <<"Number of steps to find apparent pairs in dim " << dim << ": "
+			          << n_steps_check_zero_apparent_pairs << std::endl;
 		}
 	}
 };
